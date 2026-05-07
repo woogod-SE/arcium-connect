@@ -15,6 +15,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# 파일 경로 설정을 위한 기준 디렉토리 추출 (api 폴더의 상위인 루트 폴더)
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 class ContactRequest(BaseModel):
     user_wallet: str
     hashed_contacts: List[str]
@@ -37,4 +40,6 @@ async def discover_friends(request: ContactRequest):
 
 @app.get("/")
 async def read_index():
-    return FileResponse("index.html")
+    # VPS 도커 환경과 Vercel 환경 모두에서 index.html을 안전하게 찾음
+    index_path = os.path.join(BASE_DIR, "index.html")
+    return FileResponse(index_path)
