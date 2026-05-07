@@ -1,9 +1,7 @@
 version: '3.8'
 services:
   arcium-app:
-    build:
-      context: .
-      dockerfile: backend/Dockerfile
+    build: .
     container_name: arcium-connect-node
     ports:
       - "8000:8000"

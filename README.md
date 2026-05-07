@@ -23,4 +23,4 @@ Users can discover which of their phone contacts are already using Web3 wallets,
 
 **1. Navigate to the project directory**
 ```bash
-cd /Users/whjeon/Desktop/Server/Arcium-1
+cd /root/arcium-connect

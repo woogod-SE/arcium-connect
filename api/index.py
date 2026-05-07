@@ -1,10 +1,9 @@
 import os
+import hashlib
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-import hashlib
 from typing import List
 
 app = FastAPI()
@@ -30,12 +29,12 @@ async def discover_friends(request: ContactRequest):
     matched_friends = []
     for contact_hash in request.hashed_contacts:
         if contact_hash in REGISTERED_USERS_DB:
-            matched_friends.append({"hash": contact_hash, "wallet_address": REGISTERED_USERS_DB[contact_hash]})
+            matched_friends.append({
+                "hash": contact_hash, 
+                "wallet_address": REGISTERED_USERS_DB[contact_hash]
+            })
     return {"status": "success", "data": matched_friends}
 
 @app.get("/")
 async def read_index():
-    index_path = "/app/frontend/index.html"
-    if os.path.exists(index_path):
-        return FileResponse(index_path)
-    return {"error": "File not found", "checked_path": index_path, "dir_list": os.listdir("/app/frontend") if os.path.exists("/app/frontend") else "none"}
+    return FileResponse("index.html")
