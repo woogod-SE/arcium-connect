@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Arcium Connect</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.js"></script>
+    <style>
+        body { background-color: #0f172a; color: #f8fafc; font-family: 'Inter', sans-serif; }
+        .glass-panel { background: rgba(30, 41, 59, 0.7); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 16px; backdrop-filter: blur(10px); }
+        .action-btn { transition: all 0.2s ease-in-out; }
+        .action-btn:active { transform: scale(0.95); }
+    </style>
+</head>
+<body class="flex items-center justify-center min-h-screen p-6">
+
+<div class="glass-panel p-8 w-full max-w-md shadow-2xl">
+    <div class="text-center mb-8">
+        <h1 class="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-tr from-cyan-400 to-fuchsia-500 mb-2">Arcium Connect</h1>
+        <p class="text-slate-400 text-xs tracking-widest uppercase">Privacy-First Social Protocol</p>
+    </div>
+
+    <!-- 1. Auth Section -->
+    <button id="connectBtn" class="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold py-4 rounded-xl shadow-lg transition-all mb-4">
+        Connect & Sign Wallet
+    </button>
+    <p id="walletAddress" class="text-center text-[10px] font-mono text-cyan-400 mb-6 hidden bg-cyan-950/30 py-2 rounded-lg border border-cyan-900/50"></p>
+
+    <!-- 2. Sandbox Section -->
+    <div id="syncSection" class="hidden animate-fade-in">
+        <div class="bg-slate-900/50 p-4 rounded-xl mb-4 border border-slate-700">
+            <label class="block text-[10px] font-bold text-slate-500 uppercase mb-2">Demo Sandbox: Enter Phone Numbers</label>
+            <textarea id="contactInput" rows="3" class="w-full bg-slate-950 text-slate-200 p-3 rounded-lg border border-slate-700 focus:ring-2 focus:ring-indigo-500 focus:outline-none text-sm">010-1234-5678, 010-9876-5432, 010-5555-9999</textarea>
+            <p class="text-[9px] text-slate-500 mt-2">※ 5555-9999 is not registered (PSI proof test)</p>
+        </div>
+
+        <button id="syncBtn" class="w-full bg-slate-100 hover:bg-white text-slate-900 font-black py-4 rounded-xl transition-all flex justify-center items-center">
+            <span id="syncText">SYNC VIA ARCIUM PSI</span>
+        </button>
+    </div>
+
+    <!-- 3. Results Section -->
+    <div id="resultsSection" class="hidden mt-8">
+        <div class="flex justify-between items-center mb-4 px-1">
+            <h3 class="text-sm font-bold text-slate-300 uppercase tracking-wider">Identified Friends</h3>
+            <span id="matchCount" class="bg-indigo-500/20 text-indigo-400 text-[10px] px-2 py-0.5 rounded-full font-bold"></span>
+        </div>
+        <ul id="friendsList" class="space-y-4"></ul>
+    </div>
+</div>
+
+<script>
+    let walletPubkey = null;
+    let localPhoneMap = {};
+
+    // Wallet Auth & Signing
+    document.getElementById('connectBtn').addEventListener('click', async () => {
+        if (window.solana && window.solana.isPhantom) {
+            try {
+                const resp = await window.solana.connect();
+                walletPubkey = resp.publicKey.toString();
+
+                const message = `Authorize Arcium Connect PSI Sync\nTimestamp: ${Date.now()}`;
+                const encodedMessage = new TextEncoder().encode(message);
+                await window.solana.signMessage(encodedMessage, "utf8");
+
+                document.getElementById('connectBtn').classList.add('hidden');
+                const addrElem = document.getElementById('walletAddress');
+                addrElem.textContent = `AUTHENTICATED: ${walletPubkey}`;
+                addrElem.classList.remove('hidden');
+                document.getElementById('syncSection').classList.remove('hidden');
+            } catch (err) { alert("Authentication cancelled."); }
+        } else { alert("Please install Phantom wallet."); }
+    });
+
+    async function hashContact(phone) {
+        const msgBuffer = new TextEncoder().encode(phone);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    document.getElementById('syncBtn').addEventListener('click', async () => {
+        const btn = document.getElementById('syncBtn');
+        const syncText = document.getElementById('syncText');
+        syncText.textContent = "COMPUTING PSI...";
+        btn.disabled = true;
+        btn.classList.add('opacity-50');
+
+        const rawInput = document.getElementById('contactInput').value;
+        const rawContacts = rawInput.split(',').map(s => s.trim()).filter(s => s.length > 0);
+        
+        localPhoneMap = {};
+        const hashedContacts = [];
+
+        for (const phone of rawContacts) {
+            const h = await hashContact(phone);
+            localPhoneMap[h] = phone;
+            hashedContacts.push(h);
+        }
+
+        try {
+            const response = await fetch('/api/discover_friends', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_wallet: walletPubkey, hashed_contacts: hashedContacts })
+            });
+            const result = await response.json();
+            displayFriends(result.data);
+            document.getElementById('resultsSection').classList.remove('hidden');
+            syncText.textContent = "SYNC COMPLETE";
+        } catch (err) {
+            syncText.textContent = "ERROR";
+            btn.disabled = false;
+        }
+    });
+
+    async function sendTransaction(toAddress) {
+        try {
+            const connection = new solanaWeb3.Connection("https://api.devnet.solana.com");
+            const transaction = new solanaWeb3.Transaction().add(
+                solanaWeb3.SystemProgram.transfer({
+                    fromPubkey: new solanaWeb3.PublicKey(walletPubkey),
+                    toPubkey: new solanaWeb3.PublicKey(toAddress),
+                    lamports: 1000000, 
+                })
+            );
+            transaction.feePayer = new solanaWeb3.PublicKey(walletPubkey);
+            const { blockhash } = await connection.getLatestBlockhash();
+            transaction.recentBlockhash = blockhash;
+            await window.solana.signAndSendTransaction(transaction);
+            alert("Transaction Sent!");
+        } catch (err) { alert("Transaction failed or cancelled."); }
+    }
+
+    function displayFriends(friends) {
+        const list = document.getElementById('friendsList');
+        const count = document.getElementById('matchCount');
+        list.innerHTML = '';
+        count.textContent = `${friends.length} Matches Found`;
+
+        if (friends.length === 0) {
+            list.innerHTML = '<li class="text-xs text-slate-500 text-center py-4 bg-slate-900/30 rounded-lg">No matches found in Arcium Network.</li>';
+            return;
+        }
+        
+        friends.forEach((f) => {
+            const rawPhone = localPhoneMap[f.hash]; 
+            const maskedPhone = rawPhone.replace(/(\d{3})-(\d{4})-(\d{4})/, "$1-****-$3");
+
+            const li = document.createElement('li');
+            li.className = "bg-slate-800/50 p-5 rounded-2xl border border-slate-700 shadow-inner";
+            li.innerHTML = `
+                <div class="flex flex-col mb-4">
+                    <span class="text-[8px] bg-indigo-500 text-white w-fit px-2 py-0.5 rounded-full mb-2 font-bold uppercase tracking-widest">Local Identity Found</span>
+                    <p class="font-black text-xl text-white tracking-tight">${maskedPhone}</p>
+                    <p class="text-[9px] text-slate-500 font-mono mt-1 overflow-hidden truncate">Proof: ${f.hash}</p>
+                </div>
+                <div class="grid grid-cols-3 gap-2">
+                    <a href="tel:${rawPhone}" class="action-btn bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 text-[10px] font-bold py-2.5 rounded-xl border border-emerald-500/20 text-center">CALL</a>
+                    <a href="sms:${rawPhone}" class="action-btn bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 text-[10px] font-bold py-2.5 rounded-xl border border-amber-500/20 text-center">SMS</a>
+                    <button class="action-btn bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-bold py-2.5 rounded-xl text-center" onclick="sendTransaction('${f.wallet_address}')">SEND SOL</button>
+                </div>
+            `;
+            list.appendChild(li);
+        });
+    }
+</script>
+</body>
+</html>
